@@ -1,0 +1,573 @@
+---
+title: "Predictions of Energy Efficiency of buildings using machine learning"
+author: "Mami Daba Fam"
+date: "`r Sys.Date()`"
+output: pdf_document 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts = list(width.cutoff=50), tidy = TRUE)
+```
+
+**My second capstone project in Data Science Professional Certificate**
+
+## 1. Introduction
+
+This report is the part 2 of my data science capstone project. The purpose is to do a project that will apply machine learning techniques that have been studied during the courses. I have to made the choice of the subject and the dataset to be used for this project. 
+
+I am very interested in the energy efficiency sector. Then, my project will use a dataset downloaded on the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/index.php). I will study the estimation of energy efficiency of buildings by using models such as linear regression and RandomForest.
+
+It is an enthusiastic project on establishing the effect of eight input variables on two output variables, namely heating load (HL) and cooling load (CL) of buildings. The predictors or features are identified in the dataset as X1, X2,...., X8 and the two outcomes as Y1 and Y2. 
+
+The main question is how well can we predict the heating load (Y1) and the cooling load (Y2) based on the following parameters of buildings X1 (Relative compactness), X2 (Surface Area), X3 (Wall Area), X4(Roof Area), X5(Height), X6(Orientation), X7(Glazing area), X8(Glazing variations)?
+
+Which predictors are most important variables on predicting heating load and cooling load?
+
+To answer this, my report will be structured as following : 
+
+- Explore the dataset as it is already in a tidy format
+
+- Make data visualization for better explanation of information given by our data and Better analysis of effects
+
+- Present my modeling approach mainly focus on linear regression and random forest. The two models are established to perform well in the literature.
+
+- Define and choose an evaluation method for models. 
+
+- Present results and models performances. 
+
+- Conclusion and recommendations. 
+
+## 2. Data exploration and visualization
+
+The information given by Angeliki Xifara who created the dataset in UCI machine learning repository is below : 
+
+*We perform energy analysis using 12 different building shapes simulated in Ecotect. The buildings differ with respect to the glazing area, the glazing area distribution, and the orientation, among other parameters. We simulate various settings as functions of the afore-mentioned characteristics to obtain 768 building shapes. The dataset comprises 768 samples and 8 features, aiming to predict two real valued responses. It can also be used as a multi-class classification problem if the response is rounded to the nearest integer.*
+
+All the buildings have the same volume, but different surface areas and dimensions.
+
+## 2.1 Download and split data into training and test set
+
+We will first download our data and divide it into a training set and a test set. 
+
+```{r warning=FALSE, message=FALSE}
+
+## Create a training set and a 20% testing set of our energy efficiency data set
+
+# the public dataset loaded in UCI Machine learning is in xlsx format. 
+
+#Let's first load the required library 
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(GGally)) install.packages("GGally", repos = "http://cran.us.r-project.org")
+if(!require(Metrics)) install.packages("Metrics", repos = "http://cran.us.r-project.org")
+if(!require(readxl)) install.packages("readxl", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(GGally)
+library(Metrics)
+library(readxl)
+
+## url of our energy efficiency public dataset is 
+#https://archive.ics.uci.edu/ml/machine-learning-databases/00242/ENB2012_data.xlsx
+
+#Download our public dataset on energy parameters of buildings 
+
+tmp_energy <- tempfile()
+download.file( "https://archive.ics.uci.edu/ml/machine-learning-databases/00242/ENB2012_data.xlsx", 
+               tmp_energy,quiet = TRUE, mode = "wb", method = "auto", 
+               cacheOK = TRUE, options(timeout = max(1000, getOption("timeout"))) )
+
+energy_efficiency <- read_excel(tmp_energy)
+
+#energy_test will be used as a validation set. 
+#For testing our models, we will only train on energy_training dataset
+
+set.seed(1)
+test_index <- createDataPartition(y =energy_efficiency$Y1, times = 1, p = 0.2, list = FALSE)
+energy_training <- energy_efficiency[-test_index,]
+energy_test <- energy_efficiency[test_index,]
+```
+
+## 2.2 Exploration of our datasets
+
+This is an important part that let me better understand characteristics of energy efficiency of buildings used in this dataset and the relation between variables.
+
+The entire energy_efficiency that is downloaded, has the following structure and dimension. 
+
+```{r warning=FALSE, message=FALSE}
+
+str(energy_efficiency)
+
+dim(energy_efficiency)
+```
+
+
+There are `r nrow(energy_efficiency)` observations in the public energy dataset and `r ncol(energy_efficiency)` variables. After splitting, our training dataset have `r nrow(energy_training)` observations and `r ncol(energy_training)` variables. 
+
+In the introduction, we have quickly explain what the predictors X and outcomes Y are related. The table below gives more details for this variables. 
+
+```{r echo=FALSE}
+knitr::include_graphics('~/DataScienceProjects/VARIABLES_DEFINITIONS.png')
+```
+
+
+For next step in data exploration, I will use the training set to show existing correlation between predictors and outcomes and the behavior of our variables. 
+
+
+## 2.2.1 Summarizing the statistics of our variables
+
+```{r warning=FALSE, message=FALSE}
+
+summary(energy_training)
+```
+
+## 2.2.2 Correlation between variables
+
+```{r warning=FALSE, message=FALSE}
+
+## Correlation between variables 
+cor_matrix <- round(cor(energy_training), 2)
+
+
+## As, it is a symmetrical matrix we can only show the half 
+as.dist(cor_matrix)
+
+
+# Install Gcally library for a visual representation of our variables correlation
+
+library(GGally)
+ggcorr(energy_training, name =  "Correlation coefficients")
+
+```
+
+
+
+
+The correlation matrix show us that some variables are more correlated then others : 
+
+- The two outcomes Y1(Heating load) and Y2 (Cooling load) are highly correlated with a coefficient of 0.98. It is logical. If a building has a high energy efficiency, their heating and cooling load are both low. 
+
+- The height of the building (X5) is also highly correlated to the two outcomes around 0.9. 
+
+- all the predictors have similar coefficient of correlation for the two outcomes. It is also conform regarding the high correlation between the outcomes. 
+
+- Some predictors like X6 (Orientation of the building) has zero correlation with all others variables. 
+
+- Some predictors are much more correlated to the outcomes then others. We know that features have more predictive power when they are correlated to outcome and thus provide a better estimate of our outcomes.
+
+- X7 : glazing area has a very low correlation with the outcomes (Y1) heating load and (Y2) cooling load.
+
+
+## 2.2.3 Behavior of variables by histogram visualization 
+
+The two outcomes have similar behavior. Many buildings have low heating/ cooling load around 10 and 20 kWh/`m^2`. The statistics information corroborated this as the mean of heating load is $22,33kWh/m^2$ and mean of cooling load is $24,59 kWh/m^2$.
+
+
+```{r message=FALSE, warning=FALSE}
+par(mfrow = c(1,2))
+hist(energy_training$Y1, col = 'yellow', xlab = 'Heating load (kWh/m^2)', main = 'Heating load of buildings')
+hist(energy_training$Y2, col = 'cadetblue1', xlab = 'Cooling load (kWh/m^2)', main = 'Cooling load of buildings')
+```
+
+However, some buildings have worst energy efficiency with high cooling and heating load. 
+
+```{r warning=FALSE, message=FALSE}
+
+# Buildings with heating load > 40 kWh/m^2
+
+energy_training %>% filter(Y1 >=40)%>% summarise(n())
+
+# Buildings with cooling load > 40 kWh/m^2
+
+energy_training %>% filter(Y2 >=40)%>% summarise(n())
+
+```
+
+
+
+
+**What about our predictors behavior??**
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+par(mfrow = c(2,4))
+
+hist(energy_training$X1, main = "", xlab = 'Relative compactness')
+hist(energy_training$X2, main = "", xlab = 'Surface Area(m^2)')
+hist(energy_training$X3, main = "", xlab = 'Wall Area (m^2)')
+hist(energy_training$X4, main = "", xlab = 'Roof Area (m^2)')
+hist(energy_training$X5, main = "", xlab = 'Height (m)')
+hist(energy_training$X6, main = "", xlab = 'Orientation')
+hist(energy_training$X7, main = "", xlab = 'Glazing Area')
+hist(energy_training$X8, main = "", xlab = 'Glazing variations')
+```
+- Variables have a huge range of unit scales; very different to each others. I will apply standardization and normalization to compare the performances of my two models.
+
+- Building height is divided in two main category: buildings height of 3,5m and 7m. It is a huge difference in the volume to heat or cool as the figure above has already demonstrate that this feature is highly correlated to outcomes. 
+
+
+```{r}
+# Buildings height categories
+energy_training %>% group_by(X5)%>% summarise(n())
+```
+
+- Roof area is highly correlated to outcomes Y1, Y2 and height. Buildings have strong differences in roof area from one to double in only four categories. Roof Area of the buildings is between $110,25m^2$ and $220,5m^2$.
+
+```{r}
+# Buildings Roof Area 
+energy_training %>% group_by(X4)%>% summarise(n())
+```
+
+```{r}
+# the two outcomes Y1 and Y2 are linearly correlated 
+energy_training %>% ggplot(aes(Y1, Y2)) + geom_point()
+```
+
+
+
+## 3. Models and evaluation methods
+
+
+## 3.1 Model 1- linear regression
+
+We will use linear regression for predicting Heating load Y1 and cooling load Y2. Y1 and Y2 are continuous. Our model is a multivariate linear regression. We have to predict two outcomes as a linear function of 8 predictors. I will train a unique model and a separate model for the two outcomes with the train() function include in the caret package.  
+
+$$ {Y_1} = \beta_{0,1} + \beta_{1,1}X_1 + ...\beta_{8,1}X_8 $$
+$$ {Y_2} = \beta_{0,2} + \beta_{1,2}X_1 + ...\beta_{8,2}X_8 $$
+
+
+## 3.2 Model 2 - random forest 
+
+A random forest is a supervised machine learning algorithm that is constructed from decision tree algorithms.It is used to solve regression problems. A random forest algorithm consists of many decision trees. The ‘forest’ generated by the random forest algorithm is trained through bagging or bootstrap aggregating. Bagging is an ensemble meta-algorithm that improves the accuracy of machine learning algorithms. 
+
+Random forest is a popular algorithm as it is simple to train and can perform very well by building multiple decisions trees and merging their prediction to get more accurate. 
+
+I will train random forest for each outcome. The aim of this model is to really improve my results regarding the first model of linear regression. 
+
+The train() function in caret package will also be use to fit my models.
+
+## 3.3 Evaluation Methods 
+
+I will made a calculation of evaluation metrics usually adapted to linear regression : loss functions. I have choose MSE (Mean Squared Error) and RMSE (Root Mean Squared Error). RMSE is interesting as it is in the same unit of the outcomes. Calculations are made to define the loss between the predictor and actual outcome. 
+
+In this project, $\hat{Y_1}$ the predicted heating load and $Y_1$ the observed heating loading will be compared to determine the MSE and RMSE. The same error calculations will be made with the cooling load outcomes for each model. 
+
+$$MSE = \frac{1}{N} \sum_{i=1}^{N}(\hat{Y_i} -Y_i)^2 $$
+
+$$RMSE = \sqrt{\frac{1}{N} \sum_{i=1}^{N}(\hat{Y_i} -Y_i)^2} $$
+
+Calculations of MSE and RMSE will be made directly with the mse() and rmse()functions available on metrics package.
+
+
+This evaluation metrics will allow me to compare the performance of models. The best model is which minimizes MSE and RMSE. 
+
+
+## 4. Results and models performances
+
+## 4.1. linear regression models with original data
+
+**Linear model for predicting the value of heating load Y1**
+
+```{r message=FALSE, warning=FALSE}
+# Fit the linear model of Y1 with all predictors
+
+# Original data 
+
+original_model_lm_1 <- train(Y1~X1+X2+X3+X4+X5+X6+X7+X8, data = energy_training, method= "lm")
+
+summary(original_model_lm_1)
+
+varImp(original_model_lm_1)
+
+# Predicting the trained model on test data
+original_lm_Y1_hat <- original_model_lm_1 %>% predict(energy_test)
+
+#Calculate RMSE
+
+rmse(original_lm_Y1_hat, energy_test$Y1)
+mse(original_lm_Y1_hat, energy_test$Y1)
+```
+
+
+We can observe a "NA" in the predictor X4- Roof Area that is explained by his highly correlation with X2 surface Area. I will train again the linear model without this predictors X4. 
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# Fit the linear model of Y1 with X4 predictor dropped down
+# Original data 
+
+original_model_lm_1 <- train(Y1~X1+X2+X3+X5+X6+X7+X8, data = energy_training, method= "lm")
+
+summary(original_model_lm_1)
+
+varImp(original_model_lm_1)
+
+# Predicting the trained model on test data
+original_lm_Y1_hat <- original_model_lm_1 %>% predict(energy_test)
+
+#Calculate RMSE and MSE
+
+RMSE_Y1_lm<- rmse(original_lm_Y1_hat, energy_test$Y1)
+MSE_Y1_lm<- mse(original_lm_Y1_hat, energy_test$Y1)
+
+```
+
+The error of the model does not change by dropping down X4.
+
+Let's put in place a table which summarizes- our different results obtain through models training. 
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- tibble(method= "Model 1- LINEAR MODEL OF Y1 Original data", RMSE = RMSE_Y1_lm, MSE = MSE_Y1_lm)
+RESULTS
+```
+
+**Linear model for predicting the value of cooling load Y2**
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+# Fit the linear model of Y2 with X4 predictor dropped down
+# Original data 
+
+original_model_lm_2 <- train(Y2~X1+X2+X3+X5+X6+X7+X8, data = energy_training, method= "lm")
+
+summary(original_model_lm_2)
+
+varImp(original_model_lm_2)
+
+# Predicting the trained model on test data
+original_lm_Y2_hat <- original_model_lm_2 %>% predict(energy_test)
+
+#Calculate RMSE and MSE
+
+RMSE_Y2_lm<- rmse(original_lm_Y2_hat, energy_test$Y2)
+MSE_Y2_lm<- mse(original_lm_Y2_hat, energy_test$Y2)
+
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row( tibble_row (method= "Model 1- LINEAR MODEL OF Y2 original data", RMSE = RMSE_Y2_lm, MSE = MSE_Y2_lm))
+RESULTS
+```
+
+
+
+## 4.2. Random Forest models with original data
+
+**Fit RandomForest model for heating load Y1**
+
+```{r message=FALSE, warning=FALSE}
+# Original data Random Forest
+
+original_model_rf_1 <- train(Y1~X1+X2+X3+X4+X5+X6+X7+X8, data = energy_training, method= "rf")
+
+original_model_rf_1
+
+# Variables importance 
+varImp(original_model_rf_1)
+
+
+# Predicting the trained model on test data
+original_rf_Y1_hat <- original_model_rf_1 %>% predict(energy_test)
+
+#Calculate RMSE and MSE
+RMSE_Y1_rf<-rmse(original_rf_Y1_hat, energy_test$Y1)
+MSE_Y1_rf<- mse(original_rf_Y1_hat, energy_test$Y1)
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 2- RANDOMFOREST OF Y1 original data", RMSE = RMSE_Y1_rf, MSE = MSE_Y1_rf))
+RESULTS
+```
+
+**Fit RandomForest model for cooling load Y2**
+
+```{r message=FALSE, warning=FALSE}
+# Original data Random Forest
+
+original_model_rf_2 <- train(Y2~X1+X2+X3+X4+X5+X6+X7+X8, data = energy_training, method= "rf")
+
+original_model_rf_2
+
+# Variables importance 
+varImp (original_model_rf_2)
+
+
+# Predicting the trained model on test data
+original_rf_Y2_hat <- original_model_rf_2 %>% predict(energy_test)
+
+#Calculate RMSE and MSE
+RMSE_Y2_rf<-rmse(original_rf_Y2_hat, energy_test$Y2)
+MSE_Y2_rf<- mse(original_rf_Y2_hat, energy_test$Y2)
+
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 2- RANDOMFOREST OF Y2 original data", RMSE = RMSE_Y2_rf, MSE = MSE_Y2_rf))
+RESULTS
+```
+
+## 4.3 Models performances analysis on original data. 
+
+I have obtain interesting results in this first step of modeling. RandomForest is more accurate as I have supposed. It allow a lowest RMSE of `r RMSE_Y1_rf`. 
+
+Coefficients and intercept are given the summary of our linear model. In this first model, Glazing area (X7) is the most important variable for predicting heating load(Y1) and cooling load(Y2).
+
+Orientation of buildings (X6) is the worst importance variables.It was also a variable without any correlation with any variables. 
+
+RMSE for predicting cooling load Y2 is always high on randomForest Models.  
+
+I will perform a standardization of variables to estimate how well this step could improve the model. Data Standardization is a preprocessing step that allow to put in a common format all the variables. In our dataset for example, we have height of building(X5) of 3.5m and 7m. Surface, wall and floor area are in a range of 600$m^2$
+
+
+## 4.4 linear regression models with standardized data
+
+
+```{r message=FALSE, warning=FALSE}
+
+#Standardization of the data 
+energy_efficiency_S <- as.data.frame(scale(energy_efficiency, center = TRUE, scale = TRUE))
+
+#Split standardize data into train and test set
+set.seed(1)
+test_index_S <- createDataPartition(y =energy_efficiency_S$Y1, times = 1, p = 0.2, list = FALSE)
+energy_training_S <- energy_efficiency_S[-test_index,]
+energy_test_S <- energy_efficiency_S[test_index,]
+
+#Standardized linear model for Y1 without X4
+standard_model_lm_1 <- train(Y1~X1+X2+X3+X5+X6+X7+X8, data = energy_training_S, method= "lm")
+
+summary(standard_model_lm_1)
+
+varImp(standard_model_lm_1)
+
+#Predicting with standardization model on test standardized set 
+
+standard_lm_Y1_hat <- standard_model_lm_1 %>% predict(energy_test_S)
+
+#Calculate RMSE and MSE
+RMSE_Y1_lm_S<- rmse(standard_lm_Y1_hat, energy_test_S$Y1)
+MSE_Y1_lm_S<- mse(standard_lm_Y1_hat, energy_test_S$Y1)
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 1- linear model OF Y1 standardized data", RMSE = RMSE_Y1_lm_S, MSE = MSE_Y1_lm_S))
+RESULTS
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+#Standardized linear model for Y2 without X4
+standard_model_lm_2 <- train(Y2~X1+X2+X3+X5+X6+X7+X8, data = energy_training_S, method= "lm")
+
+summary(standard_model_lm_2)
+
+varImp(standard_model_lm_2)
+
+#Predicting with standardization model on test standardized set 
+
+standard_lm_Y2_hat <- standard_model_lm_2 %>% predict(energy_test_S)
+
+#Calculate RMSE and MSE
+RMSE_Y2_lm_S<- rmse(standard_lm_Y2_hat, energy_test_S$Y2)
+MSE_Y2_lm_S<- mse(standard_lm_Y2_hat, energy_test_S$Y2)
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 1- linear model OF Y2 standardized data", RMSE = RMSE_Y2_lm_S, MSE = MSE_Y2_lm_S))
+RESULTS
+```
+
+## 4.5 RandomForest models with standardized data
+
+```{r message=FALSE, warning=FALSE}
+
+#Standardized randomForest for Y1 
+
+standard_model_rf_1 <- train(Y1~X1+X2+X3+X4+X5+X6+X7+X8, data = energy_training_S, method= "rf")
+
+standard_model_rf_1
+
+varImp(standard_model_rf_1)
+
+#Predicting with standardization model on test standardized set 
+
+standard_rf_Y1_hat <- standard_model_rf_1 %>% predict(energy_test_S)
+
+#Calculate RMSE and MSE
+RMSE_Y1_rf_S<- rmse(standard_rf_Y1_hat, energy_test_S$Y1)
+MSE_Y1_rf_S<- mse(standard_rf_Y1_hat, energy_test_S$Y1)
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 2- RANDOMFOREST OF Y1 standardized data", RMSE = RMSE_Y1_rf_S, MSE = MSE_Y1_rf_S))
+RESULTS
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+#Standardized randomForest for Y2 
+
+standard_model_rf_2 <- train(Y2~X1+X2+X3+X4+X5+X6+X7+X8, data = energy_training_S, method= "rf")
+
+standard_model_rf_2
+
+varImp(standard_model_rf_2)
+
+#Predicting with standardization model on test standardized set 
+
+standard_rf_Y2_hat <- standard_model_rf_2 %>% predict(energy_test_S)
+
+#Calculate RMSE and MSE
+RMSE_Y2_rf_S<- rmse(standard_rf_Y2_hat, energy_test_S$Y2)
+MSE_Y2_rf_S<- mse(standard_rf_Y2_hat, energy_test_S$Y2)
+```
+
+- **RESULTS**
+
+```{r echo=FALSE}
+RESULTS <- RESULTS %>% add_row(tibble_row (method= "Model 2- RANDOMFOREST OF Y2 standardized data", RMSE = RMSE_Y2_rf_S, MSE = MSE_Y2_rf_S))
+RESULTS
+
+```
+
+My evaluation metrics RMSE and MSE get better value for both heating and cooling load when data was standardize; an significant improvement of the two models.  
+
+## 5. Conclusions and recommendations
+
+In this second project capstone, I have really improve my skills in data visualization. I have trained two popular machine learning algorithms : linear regression and random forest. 
+
+I have also practice the importance of standardization of data for improving prediction models. 
+
+My models metrics evaluation shows that we can predict accurately with simplest machine learning algorithm such as linear regression and randomforest the energy efficiency of buildings. Buildings are energy consuming. Optimizing their efficiency allow a better climate protection. 
+
+This dataset and the exploration phase demonstrates that the glazing area and the orientation of buildings are not correlated to the outcomes : heating load and cooling load. However, with the linear regression model the glazing area is the most important variables. That's sound logical as glazing area can result in a lower energy consumption than opaque walls. 
+
+For future work, I will explore others machine learning algorithms that can be fitted to this type of data. I also have to perform references inclusion to .rmd report. 
+
+I aim to check sources of overtrain or overfit when I have standardize all variables. I will also explore options of standardizing some variables and not all of them. An other model training is to drop down some variables as the orientation of building(X6) to check how predictions should be accurate with and without some variables.
+
+This work has been made by reading the following documents :
+
+[Estimation of Energy Performance of Buildings Using Machine Learning Tools](https://www.researchgate.net/publication/342014481_Estimation_of_Energy_Performance_of_Buildings_Using_Machine_Learning_Tools)
+
+
+
